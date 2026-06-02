@@ -2,4 +2,4 @@
 
 rich_progress_bar:
   _target_: lightning.pytorch.callbacks.TQDMProgressBar
-  refresh_rate: 40
+  refresh_rate: 20
