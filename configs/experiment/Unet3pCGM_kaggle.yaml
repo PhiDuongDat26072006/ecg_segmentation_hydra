@@ -25,11 +25,11 @@ trainer:
   max_epochs: 500
   accelerator: gpu
   devices: 1
-  deterministic: warn
+  deterministic: warn'
 
 paths:
   root_dir: ${oc.env:PROJECT_ROOT}
-  data_dir: ${paths.data_dir}
+  data_dir: /kaggle/input/datasets/abdessamiguebli/qtdb-ludb/physionet.org/files/ludb/1.0.1/data
   log_dir: "/kaggle/working/ecg_logs"
   output_dir: ${hydra:runtime.output_dir}
   work_dir: ${hydra:runtime.cwd}
