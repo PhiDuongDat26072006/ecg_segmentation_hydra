@@ -284,7 +284,7 @@ class ECG_segmentation_LitModule(LightningModule):
 
         :param stage: Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
         """
-        if self.hparams.compile and stage == "fit":
+        if self.hparams.get("compile", False) and stage == "fit":
             self.net = torch.compile(self.net)
 
     def configure_optimizers(self) -> Dict[str, Any]:
@@ -297,7 +297,7 @@ class ECG_segmentation_LitModule(LightningModule):
         :return: A dict containing the configured optimizers and learning-rate schedulers to be used for training.
         """
         optimizer = torch.optim.SGD(params=self.parameters(), lr=self.learning_rate)
-        if self.hparams.scheduler is not None:
+        if self.hparams.get("scheduler") is not None:
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-5)
             return {
                 "optimizer": optimizer,

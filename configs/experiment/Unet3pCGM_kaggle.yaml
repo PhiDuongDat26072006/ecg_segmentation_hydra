@@ -25,7 +25,7 @@ trainer:
   max_epochs: 500
   accelerator: gpu
   devices: 1
-  deterministic: warn'
+  deterministic: warn
 
 paths:
   root_dir: ${oc.env:PROJECT_ROOT}

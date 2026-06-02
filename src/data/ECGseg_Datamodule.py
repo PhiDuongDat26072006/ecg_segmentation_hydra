@@ -31,7 +31,7 @@ class ECGseg_DataModule(LightningDataModule):
 
     def setup(self, stage: Optional[str] = None) -> None:
         n_ludb_train = 180  # 180/200
-        ludb_files = [os.path.abspath(os.path.join(self.data_dir, p))[:-4] for p in os.listdir(self.data_dir) if
+        ludb_files = [os.path.abspath(os.path.join(self.data_dir, p))[:-4] for p in sorted(os.listdir(self.data_dir)) if
                       p.endswith('.hea')]
         ludb_files_train = ludb_files[:n_ludb_train]
         ludb_files_test = ludb_files[n_ludb_train:]
