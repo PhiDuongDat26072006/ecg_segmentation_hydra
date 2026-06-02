@@ -1,44 +1,44 @@
-_target_: src.models.ECGUnet.ECGUNet
+_target_: src.models.components.ECGUnet.ECGUNet
 down1:
-  _target_: src.models.ECGUnet.StackEncoder
+  _target_: src.models.components.ECGUnet.StackEncoder
   in_channels: 1
   out_channels: 32
 
 down2:
-  _target_: src.models.ECGUnet.StackEncoder
+  _target_: src.models.components.ECGUnet.StackEncoder
   in_channels: 32
   out_channels: 64
 
 down3:
-  _target_: src.models.ECGUnet.StackEncoder
+  _target_: src.models.components.ECGUnet.StackEncoder
   in_channels: 64
   out_channels: 128
 
 down4:
-  _target_: src.models.ECGUnet.StackEncoder
+  _target_: src.models.components.ECGUnet.StackEncoder
   in_channels: 128
   out_channels: 256
 
 up4:
-  _target_: src.models.ECGUnet.StackDecoder
+  _target_: src.models.components.ECGUnet.StackDecoder
   in_channels: 512
   skip_channels: 256
   out_channels: 256
 
 up3:
-  _target_: src.models.ECGUnet.StackDecoder
+  _target_: src.models.components.ECGUnet.StackDecoder
   in_channels: 256
   skip_channels: 128
   out_channels: 128
 
 up2:
-  _target_: src.models.ECGUnet.StackDecoder
+  _target_: src.models.components.ECGUnet.StackDecoder
   in_channels: 128
   skip_channels: 64
   out_channels: 64
 
 up1:
-  _target_: src.models.ECGUnet.StackDecoder
+  _target_: src.models.components.ECGUnet.StackDecoder
   in_channels: 64
   skip_channels: 32
   out_channels: 32
@@ -46,10 +46,10 @@ up1:
 middle:
   _target_: torch.nn.Sequential
   _args_:
-    - _target_: src.models.ECGUnet.ConvBnRelu1d
+    - _target_: src.models.components.ECGUnet.ConvBnRelu1d
       in_channels: 256
       out_channels: 512
-    - _target_: src.models.ECGUnet.ConvBnRelu1d
+    - _target_: src.models.components.ECGUnet.ConvBnRelu1d
       in_channels: 512
       out_channels: 512
 
