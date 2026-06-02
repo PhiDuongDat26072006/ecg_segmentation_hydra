@@ -1,5 +1,5 @@
 from typing import Any, Dict, Tuple
-import cupy as cp
+import numpy as np
 import torch
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
@@ -246,7 +246,7 @@ class ECG_segmentation_LitModule(LightningModule):
 
         # Lưu predictions.npz
         save_path = 'predictions.npz'
-        cp.savez(save_path,
+        np.savez(save_path,
                  seg_pred=all_seg_pred,
                  seg_true=seg_true,
                  cls_pred=all_cls_pred,
@@ -261,8 +261,8 @@ class ECG_segmentation_LitModule(LightningModule):
         for c in range(4):
             p_c = (all_seg_pred == c)
             t_c = (seg_true == c)
-            intersection = cp.sum(p_c & t_c)
-            union = cp.sum(p_c) + cp.sum(t_c)
+            intersection = np.sum(p_c & t_c)
+            union = np.sum(p_c) + np.sum(t_c)
             dice = 2.0 * intersection / union if union > 0 else 1.0
             print(f'Dice Score ({class_names[c]:>8s}): {dice:.4f}')
         print(f'{"=" * 50}')
