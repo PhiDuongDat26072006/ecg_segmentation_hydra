@@ -1,0 +1,5 @@
+_target_: src.data.ECGseg_Datamodule.ECGseg_DataModule
+use_sampler: False
+data_dir: ${paths.data_dir}
+batch_size: 16
+pin_memory: True

@@ -1,0 +1,46 @@
+# @package _global_
+
+# to execute this experiment run:
+# python src/train.py experiment=ecg_mcdann
+
+defaults:
+  - override /data: ECGseg
+  - override /model: ECGUnet3pCGM
+  - override /callbacks: default
+  - override /logger: csv
+  - override /trainer: gpu
+  - override /paths: default
+  - override /extras: default
+  - override /hydra: default
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["ECGseg", "Unet3pCGM"]
+
+seed: 30
+
+trainer:
+  min_epochs: 1
+  max_epochs: 500
+  accelerator: gpu
+  devices: 1
+  deterministic: warn
+
+paths:
+  root_dir: ${oc.env:PROJECT_ROOT}
+  data_dir: "/kaggle/input/datasets/tphdng/ecg-dataset"
+  log_dir: "/kaggle/working/ecg_logs"
+  output_dir: ${hydra:runtime.output_dir}
+  work_dir: ${hydra:runtime.cwd}
+
+callbacks:
+  model_checkpoint:
+    dirpath: ${paths.output_dir}/checkpoints
+    filename: "ecg-{epoch:02d}-{val/loss:.4f}"
+    monitor: "val/loss"
+    mode: "min"
+    save_top_k: 1
+    save_last: true
+    auto_insert_metric_name: false
+
