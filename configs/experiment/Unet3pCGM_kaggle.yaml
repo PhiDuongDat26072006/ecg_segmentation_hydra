@@ -29,7 +29,7 @@ trainer:
 
 paths:
   root_dir: ${oc.env:PROJECT_ROOT}
-  data_dir: "/kaggle/input/datasets/tphdng/ecg-dataset"
+  data_dir: ${paths.data_dir}
   log_dir: "/kaggle/working/ecg_logs"
   output_dir: ${hydra:runtime.output_dir}
   work_dir: ${hydra:runtime.cwd}
