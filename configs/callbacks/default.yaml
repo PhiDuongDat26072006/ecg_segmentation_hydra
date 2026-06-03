@@ -20,3 +20,6 @@ early_stopping:
 
 model_summary:
   max_depth: -1
+
+print_metrics:
+  _target_: src.callbacks.print_metrics_callback.PrintMetricsCallback
