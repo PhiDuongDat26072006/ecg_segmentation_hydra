@@ -50,5 +50,6 @@ hydra:
     params:
       model.learning_rate: interval(0.0005, 0.002)
       trainer.max_epochs: choice(400, 450, 500, 550, 600)
+      data.batch_size: choice(16, 32, 64)
       model.alpha: interval(0.5, 1.5)
       model.beta: interval(0.5, 1.5)
