@@ -40,8 +40,8 @@ class ECG_segmentation_LitModule(LightningModule):
         https://lightning.ai/docs/pytorch/latest/common/lightning_module.html
     """
 
-    def __init__(self, net: torch.nn.Module, learning_rate, focal_gamma, alpha, beta) -> None:
-        """Initialize a `MNISTLitModule`.
+    def __init__(self, net: torch.nn.Module, learning_rate, focal_gamma, alpha, beta, scheduler: bool = True) -> None:
+        """Initialize a `ECG_segmentation_LitModule`.
 
         :param net: The model to train.
 
@@ -297,16 +297,14 @@ class ECG_segmentation_LitModule(LightningModule):
         :return: A dict containing the configured optimizers and learning-rate schedulers to be used for training.
         """
         optimizer = torch.optim.SGD(params=self.parameters(), lr=self.learning_rate)
-        if self.hparams.get("scheduler") is not None:
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-5)
-            return {
-                "optimizer": optimizer,
-                "lr_scheduler": {
-                    "scheduler": scheduler,
-                    "monitor": "val/loss",
-                    "interval": "epoch",
-                    "frequency": 1,
-                },
-            }
-        return {"optimizer": optimizer}
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-5)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val/loss",
+                "interval": "epoch",
+                "frequency": 1,
+            },
+        }
 
