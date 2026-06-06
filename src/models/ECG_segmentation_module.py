@@ -4,7 +4,7 @@ import torch
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
-from src.models.components.loss import FocalLoss
+from components.loss import FocalLoss
 
 
 class ECG_segmentation_LitModule(LightningModule):

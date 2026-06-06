@@ -58,9 +58,10 @@ def noise_reduction(segments, min_length=20, baseline_label=3):
                     continue
                 else:
                     # Xóa bỏ: Biến thành Baseline (3)
-                    seg['label'] = baseline_label
+                    if seg['label'] != baseline_label:
+                        seg['label'] = baseline_label
+                        changed = True
                     new_segments.append(seg)
-                    changed = True
             else:
                 new_segments.append(seg)
             i += 1
@@ -203,7 +204,7 @@ def calculate_accuracy_and_dice(seg_true, seg_pred, cls_true, cls_pred):
     print("="*50 + "\n")
 
 def main():
-    save_path = 'predictions.npz'
+    save_path = 'predictions1.npz'
     if not os.path.exists(save_path):
         print(f"Không tìm thấy file {save_path}! Vui lòng train mô hình trước.")
         return
@@ -223,18 +224,18 @@ def main():
     
     # Duyệt qua từng bản ghi điện tim
     for i in range(len(seg_true_all)):
+        print(f"BẢN GHI THỨ {i}")
         # 1. Trích xuất ranh giới Ground Truth (Bác sĩ)
         t_segs = extract_segments(seg_true_all[i])
         t_b = extract_boundaries(t_segs)
-        
         # 2. Hậu xử lý kết quả Dự đoán của AI
         p_segs = extract_segments(seg_pred_all[i])
         p_segs = noise_reduction(p_segs, min_length=20) # Bỏ nhiễu < 40ms
         p_segs = boundary_determination(p_segs)         # Xác định P và T chính
         p_b = extract_boundaries(p_segs)
-        
         # 3. So khớp chuẩn AAMI 150ms
         for k in metrics.keys():
+            print(f"{k}")
             tp, fp, fn, errors = evaluate_aami_single_type(t_b[k], p_b[k], tolerance=75)
             metrics[k]['tp'] += tp
             metrics[k]['fp'] += fp
@@ -261,6 +262,8 @@ def main():
         
         print(f"{k:<15} | {tp:<6} | {fp:<6} | {fn:<6} | {f1:<10.4f} | {mean_err:<15.2f} | {std_err:<15.2f}")
     print("="*95)
+
+    print("END")
 
 if __name__ == "__main__":
     main()

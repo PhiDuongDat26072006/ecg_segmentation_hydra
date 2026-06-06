@@ -4,8 +4,8 @@ import torch
 from lightning import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split, WeightedRandomSampler
 from torchvision.datasets import MNIST
-from src.data.components.transform import *
-from src.data.components.datareader import *
+from components.transform import *
+from components.datareader import *
 import os
 
 class ECGseg_DataModule(LightningDataModule):
