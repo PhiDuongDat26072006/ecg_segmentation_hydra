@@ -137,7 +137,7 @@ class ECG_segmentation_LitModule(LightningModule):
 
     def test_step(self, batch: Tuple[torch.Tensor, ...], batch_idx: int) -> None:
         if self.hparams.get('train_classification_only', False):
-            x, _, _ = batch  # DataModule luôn trả về 3 biến
+            x, _, _ = batch  
         else:
             x, _, _ = batch
             
@@ -159,24 +159,25 @@ class ECG_segmentation_LitModule(LightningModule):
         self.log("cls_test/acc", self.cls_test_acc, on_step=False, on_epoch=True, prog_bar=True)
 
         self.test_step_signals.append(x.cpu())
-        self.test_step_seg_preds.append(seg_preds.cpu())
+        if not self.hparams.get('train_classification_only', False):
+            self.test_step_seg_preds.append(seg_preds.cpu())
         self.test_step_cls_preds.append(cls_preds.cpu())
         self.test_step_cls_targets.append(cls_targets.cpu())
 
     def on_test_epoch_end(self) -> None:
         signals = torch.cat(self.test_step_signals, dim=0).squeeze(1).numpy()
-        all_seg_pred = torch.cat(self.test_step_seg_preds, dim=0).numpy()
         all_cls_pred = torch.cat(self.test_step_cls_preds, dim=0).numpy()
         cls_true = torch.cat(self.test_step_cls_targets, dim=0).numpy()
 
         save_dict = {
-            'seg_pred': all_seg_pred,
             'cls_pred': all_cls_pred,
             'cls_true': cls_true,
             'signals': signals
         }
 
         if not self.hparams.get('train_classification_only', False):
+            all_seg_pred = torch.cat(self.test_step_seg_preds, dim=0).numpy()
+            save_dict['seg_pred'] = all_seg_pred
             seg_true = torch.cat(self.test_step_seg_targets, dim=0).numpy()
             save_dict['seg_true'] = seg_true
             
@@ -199,10 +200,10 @@ class ECG_segmentation_LitModule(LightningModule):
         print(f'Predictions saved to: {save_path}')
 
         self.test_step_signals.clear()
-        self.test_step_seg_preds.clear()
         self.test_step_cls_preds.clear()
         self.test_step_cls_targets.clear()
         if not self.hparams.get('train_classification_only', False):
+            self.test_step_seg_preds.clear()
             self.test_step_seg_targets.clear()
 
     def setup(self, stage: str) -> None:
