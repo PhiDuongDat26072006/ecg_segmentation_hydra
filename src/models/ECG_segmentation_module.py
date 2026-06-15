@@ -61,7 +61,7 @@ class ECG_segmentation_LitModule(LightningModule):
 
     def model_step(self, batch: Tuple[torch.Tensor, ...]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         if self.hparams.get('train_classification_only', False):
-            x, cls_targets = batch
+            x, _, cls_targets = batch  # DataModule luôn trả về 3 biến, bỏ qua dummy seg_targets
             seg_targets = None
         else:
             x, seg_targets, cls_targets = batch

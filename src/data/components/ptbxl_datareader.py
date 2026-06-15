@@ -63,7 +63,7 @@ def load_ptbxl_cls_tensors(data_dir, leads=None, sampling_rate=500):
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"Không tìm thấy ptbxl_database.csv tại: {csv_path}")
 
-    df = pd.read_csv(csv_path, index_col='ecg_id')
+    df = pd.read_csv(csv_path, index_col='ecg_id', encoding='latin-1')
 
     # Parse scp_codes from string to dict
     df['scp_codes'] = df['scp_codes'].apply(ast.literal_eval)
