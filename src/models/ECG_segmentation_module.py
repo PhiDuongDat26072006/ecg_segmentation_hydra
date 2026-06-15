@@ -241,3 +241,11 @@ class ECG_segmentation_LitModule(LightningModule):
                 "frequency": 1,
             },
         }
+
+    def on_train_end(self) -> None:
+        """Tự động xuất file .pth sau khi train xong."""
+        import os
+        log_dir = self.trainer.log_dir if self.trainer.log_dir else "."
+        pth_path = os.path.join(log_dir, "final_model.pth")
+        torch.save({"model_state_dict": self.net.state_dict()}, pth_path)
+        print(f"\n✅ Đã lưu model weights vào: {pth_path}")
