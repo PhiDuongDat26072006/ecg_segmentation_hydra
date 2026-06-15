@@ -137,7 +137,7 @@ class ECG_segmentation_LitModule(LightningModule):
 
     def test_step(self, batch: Tuple[torch.Tensor, ...], batch_idx: int) -> None:
         if self.hparams.get('train_classification_only', False):
-            x, _ = batch
+            x, _, _ = batch  # DataModule luôn trả về 3 biến
         else:
             x, _, _ = batch
             
