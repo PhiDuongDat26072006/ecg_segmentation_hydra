@@ -59,11 +59,11 @@ def load_ptbxl_cls_tensors(data_dir, leads=None, sampling_rate=500):
     lead_indices = [LEAD_NAMES.index(l) for l in leads]
 
     # Read metadata
-    csv_path = os.path.join(data_dir, 'ptbxl_database.csv')
-    if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"Không tìm thấy ptbxl_database.csv tại: {csv_path}")
+    excel_path = os.path.join(data_dir, 'ptbxl_database_fixed.xlsx')
+    if not os.path.exists(excel_path):
+        raise FileNotFoundError(f"Không tìm thấy ptbxl_database_fixed.xlsx tại: {excel_path}")
 
-    df = pd.read_csv(csv_path, index_col='ecg_id', encoding='latin-1')
+    df = pd.read_excel(excel_path, index_col='ecg_id')
 
     # Parse scp_codes from string to dict
     df['scp_codes'] = df['scp_codes'].apply(ast.literal_eval)
@@ -79,11 +79,13 @@ def load_ptbxl_cls_tensors(data_dir, leads=None, sampling_rate=500):
         signal_dir = 'records100'
         signal_length = 1000
 
-    # Split by strat_fold
+    # Randomly shuffle and split: 90% train, 10% test
+    df_shuffled = df.sample(frac=1, random_state=42)
+    n_train = int(len(df_shuffled) * 0.9)
+
     splits = {
-        'train': df[df['strat_fold'].isin(range(1, 9))],
-        'val': df[df['strat_fold'] == 9],
-        'test': df[df['strat_fold'] == 10],
+        'train': df_shuffled.iloc[:n_train],
+        'test': df_shuffled.iloc[n_train:],
     }
 
     result = {}
