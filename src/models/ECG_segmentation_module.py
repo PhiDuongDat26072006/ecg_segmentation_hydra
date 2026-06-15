@@ -66,7 +66,8 @@ class ECG_segmentation_LitModule(LightningModule):
         else:
             x, seg_targets, cls_targets = batch
 
-        seg_preds, cls_probs_preds = self.forward(x)
+        skip_decoder = self.hparams.get('train_classification_only', False)
+        seg_preds, cls_probs_preds = self.net(x, skip_decoder=skip_decoder)
 
         cls_loss = self.loss_function_cls(cls_probs_preds, cls_targets)
 

@@ -19,8 +19,19 @@ model:
   train_classification_only: True
   pretrained_path: <ĐƯỜNG_DẪN_FILE_PTH>
 
+trainer:
+  min_epochs: 1
+  max_epochs: 500
+  accelerator: gpu
+  devices: 1
+  deterministic: warn
+  
 # Ghi đè metrics để theo dõi đúng nhánh cls
 callbacks:
   model_checkpoint:
     monitor: "cls_val/loss"
     mode: "min"
+
+  early_stopping:
+    monitor: "cls_val/loss"
+    patience: 100

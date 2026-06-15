@@ -88,7 +88,7 @@ class ECGUNet3pCGM(nn.Module):
 
         return seg_masked
 
-    def forward(self, x):
+    def forward(self, x, skip_decoder=False):
         # encoder
         X_enc1, x = self.down1(x)
         X_enc2, x = self.down2(x)
@@ -106,6 +106,10 @@ class ECGUNet3pCGM(nn.Module):
         ], dim=1)
         X_cls_prob = self.classify(aggregate)
         X_cls = X_cls_prob.argmax(dim=1)  # (B,)
+
+        # Bỏ qua decoder nếu chỉ cần nhánh classification
+        if skip_decoder:
+            return None, X_cls_prob
 
         # decoder
         X_dec5 = X_enc5
