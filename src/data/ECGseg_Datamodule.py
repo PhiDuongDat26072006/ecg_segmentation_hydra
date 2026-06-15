@@ -10,8 +10,9 @@ import os
 
 class ECGseg_DataModule(LightningDataModule):
     def __init__(self, use_sampler, data_dir: str = "data/", batch_size: int = 64,
-                 pin_memory: bool = True) -> None:
+                 pin_memory: bool = True, dataset_name: str = "ludb") -> None:
         super().__init__()
+        self.dataset_name = dataset_name
         self.data_dir = data_dir
         self.batch_size = batch_size
         self.pin_memory = pin_memory
@@ -30,14 +31,25 @@ class ECGseg_DataModule(LightningDataModule):
         return 2
 
     def setup(self, stage: Optional[str] = None) -> None:
-        n_ludb_train = 180  # 180/200
-        ludb_files = [os.path.abspath(os.path.join(self.data_dir, p))[:-4] for p in sorted(os.listdir(self.data_dir)) if
-                      p.endswith('.hea')]
-        ludb_files_train = ludb_files[:n_ludb_train]
-        ludb_files_test = ludb_files[n_ludb_train:]
-
-        X_train, y_seg_train, y_cls_train = load_ludb_tensors(ludb_files_train)
-        X_test, y_seg_test, y_cls_test = load_ludb_tensors(ludb_files_test)
+        if self.dataset_name == "ludb":
+            n_ludb_train = 180  # 180/200
+            ludb_files = [os.path.abspath(os.path.join(self.data_dir, p))[:-4] for p in sorted(os.listdir(self.data_dir)) if
+                          p.endswith('.hea')]
+            ludb_files_train = ludb_files[:n_ludb_train]
+            ludb_files_test = ludb_files[n_ludb_train:]
+    
+            X_train, y_seg_train, y_cls_train = load_ludb_tensors(ludb_files_train)
+            X_test, y_seg_test, y_cls_test = load_ludb_tensors(ludb_files_test)
+        elif self.dataset_name == "ptbxl":
+            from .components.ptbxl_datareader import load_ptbxl_cls_tensors
+            data = load_ptbxl_cls_tensors(self.data_dir)
+            X_train, y_cls_train = data['train']['X'], data['train']['y_cls']
+            X_test, y_cls_test = data['test']['X'], data['test']['y_cls']
+            # Dummy seg targets to keep dataloader output consistent (len 3)
+            y_seg_train = torch.zeros((X_train.size(0), 4, X_train.size(2)))
+            y_seg_test = torch.zeros((X_test.size(0), 4, X_test.size(2)))
+        else:
+            raise ValueError(f"Unknown dataset_name: {self.dataset_name}")
         if self.use_sampler:
             target = y_cls_train
             weight = torch.tensor([1. / torch.sum(target == t) for t in torch.unique(target)])

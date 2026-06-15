@@ -1,0 +1,26 @@
+# @package _global_
+
+# Cấu hình "thông báo" fine-tune classification trên dataset PTB-XL
+# Chạy bằng lệnh: python src/train.py experiment=finetune_cls
+
+defaults:
+  - override /data: ECGseg
+  - override /model: ECGUnet3pCGM
+
+# Chuyển sang đọc dataset PTB-XL
+data:
+  dataset_name: "ptbxl"
+  data_dir: <ĐƯỜNG_DẪN_THƯ_MỤC_PTBXL>
+  use_sampler: True
+  batch_size: 32
+
+# Thông báo cho model: bật cờ chạy 1 nhánh và load lại tham số
+model:
+  train_classification_only: True
+  pretrained_path: <ĐƯỜNG_DẪN_FILE_PTH>
+
+# Ghi đè metrics để theo dõi đúng nhánh cls
+callbacks:
+  model_checkpoint:
+    monitor: "cls_val/loss"
+    mode: "min"
