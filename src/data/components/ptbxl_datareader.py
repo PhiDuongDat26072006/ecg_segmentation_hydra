@@ -51,8 +51,7 @@ def load_ptbxl_cls_tensors(data_dir, leads=None, sampling_rate=500):
             X: torch.Tensor (N * n_leads, 1, signal_length) - signal data
             y_cls: torch.Tensor (N * n_leads,) - classification labels (int64)
     """
-    if leads is None:
-        leads = ['I', 'II']
+    leads = LEAD_NAMES
 
     # Normalize lead names to uppercase
     leads = [l.upper() for l in leads]
