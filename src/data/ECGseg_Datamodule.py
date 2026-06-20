@@ -33,13 +33,13 @@ class ECGseg_DataModule(LightningDataModule):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.dataset_name == "ludb":
-            n_ludb_test = 40  # /200
+            n_ludb_test = 66  # /200
             ludb_files = [os.path.abspath(os.path.join(self.data_dir, p))[:-4] for p in
                           sorted(os.listdir(self.data_dir)) if
                           p.endswith('.hea')]
 
-            test_start_idx = self.fold * n_ludb_test
-            test_end_idx = (self.fold + 1) * n_ludb_test
+            test_start_idx = 1 + self.fold * n_ludb_test
+            test_end_idx = 1 + (self.fold + 1) * n_ludb_test
             ludb_files_test = ludb_files[test_start_idx:test_end_idx]
             ludb_files_train = ludb_files[:test_start_idx] + ludb_files[test_end_idx:]
 
