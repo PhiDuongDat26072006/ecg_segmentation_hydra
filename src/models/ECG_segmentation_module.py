@@ -231,6 +231,7 @@ class ECG_segmentation_LitModule(LightningModule):
     def configure_optimizers(self) -> Dict[str, Any]:
         trainable_params = filter(lambda p: p.requires_grad, self.parameters())
         optimizer = torch.optim.SGD(params=trainable_params, lr=self.learning_rate)
+        # optimizer = torch.optim.AdamW(params=trainable_params, lr=self.learning_rate)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-5)
         return {
             "optimizer": optimizer,
