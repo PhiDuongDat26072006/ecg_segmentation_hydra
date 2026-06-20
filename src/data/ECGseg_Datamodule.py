@@ -9,8 +9,8 @@ from .components.datareader import *
 import os
 
 class ECGseg_DataModule(LightningDataModule):
-    def __init__(self, use_sampler, data_dir: str = "data/", batch_size: int = 64,
-                 pin_memory: bool = True, dataset_name: str = "ludb") -> None:
+    def __init__(self, use_sampler, data_dir, batch_size,
+                 pin_memory, dataset_name, fold) -> None:
         super().__init__()
         self.dataset_name = dataset_name
         self.data_dir = data_dir
@@ -21,6 +21,7 @@ class ECGseg_DataModule(LightningDataModule):
         self.train_sampler = None
         self.train_dataset = None
         self.test_dataset = None
+        self.fold = fold
 
     @property
     def seg_num_classes(self) -> int:
@@ -32,12 +33,15 @@ class ECGseg_DataModule(LightningDataModule):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.dataset_name == "ludb":
-            n_ludb_train = 100  # 180/200
+            n_ludb_test = 40  # /200
             ludb_files = [os.path.abspath(os.path.join(self.data_dir, p))[:-4] for p in
                           sorted(os.listdir(self.data_dir)) if
                           p.endswith('.hea')]
-            ludb_files_train = ludb_files[:n_ludb_train]
-            ludb_files_test = ludb_files[n_ludb_train:]
+
+            test_start_idx = self.fold * n_ludb_test
+            test_end_idx = (self.fold + 1) * n_ludb_test
+            ludb_files_test = ludb_files[test_start_idx:test_end_idx]
+            ludb_files_train = ludb_files[:test_start_idx] + ludb_files[test_end_idx:]
 
             X_train, y_seg_train, y_cls_train = load_ludb_tensors(ludb_files_train)
             X_test, y_seg_test, y_cls_test = load_ludb_tensors(ludb_files_test)

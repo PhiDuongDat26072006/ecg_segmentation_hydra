@@ -3,3 +3,5 @@ use_sampler: False
 data_dir: ${paths.data_dir}
 batch_size: 16
 pin_memory: True
+dataset_name: 'ludb'
+fold : 0
