@@ -104,6 +104,11 @@ class ECGUNet3pCGM(nn.Module):
             F.avg_pool1d(X_enc4, kernel_size=2),
             X_enc5
         ], dim=1)
+        
+        # Nếu chỉ train nhánh classify (skip_decoder=True), chặn gradient truyền ngược về encoder
+        if skip_decoder:
+            aggregate = aggregate.detach()
+            
         X_cls_prob = self.classify(aggregate)
         X_cls = X_cls_prob.argmax(dim=1)  # (B,)
 
