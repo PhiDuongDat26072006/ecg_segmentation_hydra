@@ -22,164 +22,22 @@ import numpy as np
 import os
 import sys
 import argparse
+import torch
+import hydra
+from omegaconf import OmegaConf
 from collections import OrderedDict, Counter
-
+from models.components.post_processing import *
+from data.components.datareader import load_ludb_tensors
 # ---- Hằng số ----
 N_LEADS = 12
+LEAD_NAMES = ['I', 'II', 'III', 'aVR', 'aVL', 'aVF', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6']
+EVAL_LEAD_INDICES = [0, 1, 2, 3, 4, 5, 6 , 7, 8, 9, 10, 11]  # Chỉ đánh giá Lead I và Lead II
 BOUNDARY_TYPES = ['P_onset', 'P_offset', 'QRS_onset', 'QRS_offset', 'T_onset', 'T_offset']
 P_WAVE_EXCLUDED = {'AFIB', 'AFL', 'VT'}
 RHYTHM_ORDER = ['NSR', 'ST', 'BBB', 'AVB1', 'AFIB', 'AFL', 'VT']
-
-
-# ============================================================
-# Post-processing (Paper Section 3.7)
-# ============================================================
-
-def extract_segments(labels):
-    """Bước 1: Trích xuất phân đoạn thô từ chuỗi nhãn."""
-    segments = []
-    if len(labels) == 0:
-        return segments
-
-    current_label = labels[0]
-    onset = 0
-    for i in range(1, len(labels)):
-        if labels[i] != current_label:
-            segments.append({
-                'label': current_label,
-                'onset': onset,
-                'offset': i - 1,
-                'length': i - onset
-            })
-            current_label = labels[i]
-            onset = i
-    segments.append({
-        'label': current_label,
-        'onset': onset,
-        'offset': len(labels) - 1,
-        'length': len(labels) - onset
-    })
-    return segments
-
-
-def noise_reduction(segments, min_length=20, baseline_label=3):
-    """Bước 2: Lọc nhiễu < 40ms (20 mẫu tại 500Hz) và gán lại nhãn."""
-    changed = True
-    while changed:
-        changed = False
-        new_segments = []
-        i = 0
-        while i < len(segments):
-            seg = segments[i]
-            if seg['length'] < min_length:
-                left_seg = new_segments[-1] if len(new_segments) > 0 else None
-                right_seg = segments[i + 1] if i + 1 < len(segments) else None
-
-                left_label = left_seg['label'] if left_seg else None
-                right_label = right_seg['label'] if right_seg else None
-
-                if left_seg and right_seg and left_label == right_label:
-                    # Gluing: Nếu 2 bên cùng nhãn -> Gộp cả 3 đoạn
-                    left_seg = new_segments.pop()
-                    merged = {
-                        'label': left_label,
-                        'onset': left_seg['onset'],
-                        'offset': right_seg['offset'],
-                        'length': left_seg['length'] + seg['length'] + right_seg['length']
-                    }
-                    new_segments.append(merged)
-                    i += 2
-                    changed = True
-                    continue
-                else:
-                    # Xóa bỏ: Biến thành Baseline
-                    if seg['label'] != baseline_label:
-                        seg['label'] = baseline_label
-                        changed = True
-                    new_segments.append(seg)
-            else:
-                new_segments.append(seg)
-            i += 1
-
-        # Hợp nhất các đoạn kề nhau có cùng nhãn
-        segments = _merge_adjacent(new_segments)
-
-    return segments
-
-
-def boundary_determination(segments, p_label=0, qrs_label=1, t_label=2, baseline_label=3):
-    """Bước 3: Giữ lại P và T dài nhất giữa mỗi cặp QRS, gộp lại."""
-    qrs_indices = [i for i, seg in enumerate(segments) if seg['label'] == qrs_label]
-
-    if not qrs_indices:
-        return segments
-
-    # Chia thành các interval: [trước QRS₁] [QRS₁] [giữa] [QRS₂] ... [sau QRS cuối]
-    intervals = []
-    start = 0
-    for qi in qrs_indices:
-        intervals.append(segments[start:qi])    # đoạn trước/giữa
-        intervals.append([segments[qi]])        # QRS riêng
-        start = qi + 1
-    intervals.append(segments[start:])          # đoạn sau QRS cuối
-
-    # Xử lý từng interval
-    final_segments = []
-    for interval in intervals:
-        if not interval:
-            continue
-
-        # QRS → giữ nguyên
-        if interval[0]['label'] == qrs_label:
-            final_segments.append(interval[0])
-            continue
-
-        # Tìm P và T dài nhất trong interval
-        p_waves = [s for s in interval if s['label'] == p_label]
-        t_waves = [s for s in interval if s['label'] == t_label]
-        longest_p = max(p_waves, key=lambda x: x['length']) if p_waves else None
-        longest_t = max(t_waves, key=lambda x: x['length']) if t_waves else None
-
-        # Đánh P/T không dài nhất thành baseline
-        for seg in interval:
-            if seg['label'] == p_label and seg is not longest_p:
-                seg['label'] = baseline_label
-            elif seg['label'] == t_label and seg is not longest_t:
-                seg['label'] = baseline_label
-            final_segments.append(seg)
-
-    return _merge_adjacent(final_segments)
-
-
-def _merge_adjacent(segments):
-    """Hợp nhất các segment liên tiếp có cùng nhãn."""
-    if not segments:
-        return []
-    merged = []
-    current = segments[0]
-    for nxt in segments[1:]:
-        if current['label'] == nxt['label']:
-            current['offset'] = nxt['offset']
-            current['length'] += nxt['length']
-        else:
-            merged.append(current)
-            current = nxt
-    merged.append(current)
-    return merged
-
-
-def extract_boundaries(segments):
-    """Lấy danh sách các điểm Onset/Offset cho từng nhãn."""
-    label_map = {0: 'P', 1: 'QRS', 2: 'T'}
-    boundaries = {bt: [] for bt in BOUNDARY_TYPES}
-    for seg in segments:
-        prefix = label_map.get(seg['label'])
-        if prefix:
-            boundaries[f'{prefix}_onset'].append(seg['onset'])
-            boundaries[f'{prefix}_offset'].append(seg['offset'])
-    return boundaries
-
-
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 # ============================================================
 # Evaluation Matching (Paper Section 4.1)
 # ============================================================
@@ -279,7 +137,7 @@ def get_test_rhythm_labels(data_dir, n_test_records):
     print(f"\nPhân bố rhythm trong test set:")
     for r in RHYTHM_ORDER:
         if r in counts:
-            print(f"  {r}: {counts[r]} bản ghi ({counts[r] * N_LEADS} tín hiệu)")
+            print(f"  {r}: {counts[r]} bản ghi ({counts[r] * len(EVAL_LEAD_INDICES)} tín hiệu)")
 
     return rhythms
 
@@ -289,9 +147,22 @@ def get_test_rhythm_labels(data_dir, n_test_records):
 # ============================================================
 
 def calculate_accuracy_and_dice(seg_true, seg_pred, cls_true, cls_pred):
-    """Tính Accuracy tổng thể và Dice Score cho từng class."""
+    """Tính Accuracy tổng thể và Dice Score cho từng class.
+
+    Chỉ tính trên vùng annotated (bỏ baseline đầu/cuối bản ghi).
+    """
+    # Trim từng signal theo vùng annotated
+    trimmed_true = []
+    trimmed_pred = []
+    for i in range(len(seg_true)):
+        ann_start, ann_end = find_annotated_range(seg_true[i])
+        trimmed_true.append(seg_true[i][ann_start:ann_end + 1])
+        trimmed_pred.append(seg_pred[i][ann_start:ann_end + 1])
+    seg_true_trimmed = np.concatenate(trimmed_true)
+    seg_pred_trimmed = np.concatenate(trimmed_pred)
+
     cls_acc = np.mean(cls_pred == cls_true)
-    seg_acc = np.mean(seg_pred == seg_true)
+    seg_acc = np.mean(seg_pred_trimmed == seg_true_trimmed)
 
     print("\n" + "=" * 50)
     print("PIXEL-WISE ACCURACY & DICE SCORE")
@@ -302,8 +173,8 @@ def calculate_accuracy_and_dice(seg_true, seg_pred, cls_true, cls_pred):
 
     class_names = ['P', 'QRS', 'T', 'Baseline']
     for c in range(4):
-        p_c = (seg_pred == c)
-        t_c = (seg_true == c)
+        p_c = (seg_pred_trimmed == c)
+        t_c = (seg_true_trimmed == c)
         intersection = np.sum(p_c & t_c)
         union = np.sum(p_c) + np.sum(t_c)
         dice = 2.0 * intersection / union if union > 0 else 1.0
@@ -314,6 +185,36 @@ def calculate_accuracy_and_dice(seg_true, seg_pred, cls_true, cls_pred):
 # ============================================================
 # Per-rhythm Evaluation
 # ============================================================
+# ============================================================
+# Annotated-range Detection
+# ============================================================
+
+def find_annotated_range(labels, baseline_label=3):
+    """Tìm vùng mà bác sĩ thực sự gán nhãn (bỏ qua baseline ở đầu/cuối).
+
+    LUDB: bác sĩ thường không gán nhãn ~1000 mẫu đầu và cuối bản ghi,
+    vùng đó mặc định thành baseline. Model dự đoán P/QRS/T ở đó
+    → FP giả nếu không trim.
+
+    Returns:
+        (start, end): chỉ số mẫu đầu và cuối của vùng annotated (inclusive).
+                      Nếu toàn baseline → (0, len-1).
+    """
+    non_baseline = np.where(labels != baseline_label)[0]
+    if len(non_baseline) == 0:
+        return 0, len(labels) - 1
+    return int(non_baseline[0]), int(non_baseline[-1])
+
+def extract_boundaries(segments, BOUNDARY_TYPES):
+    """Lấy danh sách các điểm Onset/Offset cho từng nhãn."""
+    label_map = {0: 'P', 1: 'QRS', 2: 'T'}
+    boundaries = {bt: [] for bt in BOUNDARY_TYPES}
+    for seg in segments:
+        prefix = label_map.get(seg['label'])
+        if prefix:
+            boundaries[f'{prefix}_onset'].append(seg['onset'])
+            boundaries[f'{prefix}_offset'].append(seg['offset'])
+    return boundaries
 
 def evaluate_per_rhythm(seg_true_all, seg_pred_all, lead_rhythms, tolerance=75):
     """Đánh giá AAMI theo từng rhythm — đúng phương pháp bài báo."""
@@ -334,14 +235,21 @@ def evaluate_per_rhythm(seg_true_all, seg_pred_all, lead_rhythms, tolerance=75):
             all_errors = []
 
             for i in indices:
+                gt_labels = seg_true_all[i]
+                pred_labels = seg_pred_all[i]
+
+                # Trim theo vùng annotated của GT (bỏ đầu/cuối không gán nhãn)
+                ann_start, ann_end = find_annotated_range(gt_labels)
+                gt_trimmed = gt_labels[ann_start:ann_end + 1]
+                pred_trimmed = pred_labels[ann_start:ann_end + 1]
+
                 # Ground truth (không cần post-processing)
-                t_b = extract_boundaries(extract_segments(seg_true_all[i]))
+                t_b = extract_boundaries(extract_segments(gt_trimmed), BOUNDARY_TYPES)
 
                 # Predicted (với post-processing theo Section 3.7)
-                p_segs = extract_segments(seg_pred_all[i])
-                p_segs = noise_reduction(p_segs, min_length=20)
-                p_segs = boundary_determination(p_segs)
-                p_b = extract_boundaries(p_segs)
+                p_segs = post_processing(pred_trimmed)
+
+                p_b = extract_boundaries(p_segs, BOUNDARY_TYPES)
 
                 tp, fp, fn, errors = evaluate_aami_single_type(
                     p_b[btype], t_b[btype], tolerance
@@ -441,17 +349,14 @@ def print_detailed_table(results):
 # Model Loading & Inference Helpers
 # ============================================================
 
-def _load_test_data(data_dir, n_train=100):
+def _load_test_data(data_dir, n_train=180):
     """Nạp test set từ LUDB (dùng chung cho cả .pth và .ckpt)."""
-    import torch
     from torch.utils.data import TensorDataset, DataLoader
 
     # Thêm project root vào sys.path nếu chưa có
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
-
-    from src.data.components.datareader import load_ludb_tensors
 
     if not os.path.exists(data_dir):
         raise FileNotFoundError(f"Không tìm thấy thư mục LUDB data: {data_dir}")
@@ -470,56 +375,6 @@ def _load_test_data(data_dir, n_train=100):
     cls_true = y_cls_test.numpy()
 
     return loader, seg_true, cls_true
-
-
-def build_ecg_unet3p_cgm(n_channels=32, mask=True):
-    """Khởi tạo kiến trúc ECGUNet3pCGM với các tham số mặc định."""
-    import torch.nn as nn
-
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
-
-    from src.models.components.ECGUnet3pCGM import (
-        ECGUNet3pCGM, StackEncoder, StackDecoder3p, ConvBnRelu1d
-    )
-
-    filters = [n_channels * (2 ** n) for n in range(5)]   # [32, 64, 128, 256, 512]
-    f_skip = filters[0]                                     # 32
-    f_dec = f_skip * 5                                      # 160
-
-    net = ECGUNet3pCGM(
-        down1=StackEncoder(1, filters[0]),
-        down2=StackEncoder(filters[0], filters[1]),
-        down3=StackEncoder(filters[1], filters[2]),
-        down4=StackEncoder(filters[2], filters[3]),
-        middle=nn.Sequential(
-            ConvBnRelu1d(filters[3], filters[4]),
-            ConvBnRelu1d(filters[4], filters[4]),
-        ),
-        classify=nn.Sequential(
-            nn.BatchNorm1d(sum(filters)),
-            nn.LeakyReLU(),
-            nn.Conv1d(sum(filters), filters[4], kernel_size=17, padding=8),
-            nn.BatchNorm1d(filters[4]),
-            nn.LeakyReLU(),
-            nn.Dropout1d(p=0.2),
-            nn.Conv1d(filters[4], filters[4], kernel_size=17, padding=8),
-            nn.BatchNorm1d(filters[4]),
-            nn.LeakyReLU(),
-            nn.AdaptiveAvgPool1d(1),
-            nn.Flatten(start_dim=1),
-            nn.Linear(filters[4], 2),
-        ),
-        up4=StackDecoder3p([filters[0], filters[1], filters[2], filters[3], filters[4]], f_skip, f_dec),
-        up3=StackDecoder3p([filters[0], filters[1], filters[2], f_dec, filters[4]], f_skip, f_dec),
-        up2=StackDecoder3p([filters[0], filters[1], f_dec, f_dec, filters[4]], f_skip, f_dec),
-        up1=StackDecoder3p([filters[0], f_dec, f_dec, f_dec, filters[4]], f_skip, f_dec),
-        segment=nn.Conv1d(f_dec, 4, kernel_size=1),
-        mask=mask,
-    )
-    return net
-
 
 def _run_inference(net, loader):
     """Chạy inference trên DataLoader, trả về seg_pred và cls_pred."""
@@ -541,25 +396,30 @@ def _run_inference(net, loader):
     return np.concatenate(all_seg, axis=0), np.concatenate(all_cls, axis=0)
 
 
-def predict_from_pth(pth_path, data_dir):
+def build_ecg_unet3p_cgm(mask=True):
+    """Khởi tạo mạng bằng cách đọc cấu hình từ file YAML thông qua Hydra."""
+    config_path = os.path.join(PROJECT_ROOT, 'configs', 'model', 'ECGUnet3pCGM.yaml')
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Không tìm thấy file config: {config_path}")
+
+    # Nạp file config YAML
+    cfg = OmegaConf.load(config_path)
+
+    # Dùng Hydra instantiate để tự động khởi tạo toàn bộ Class từ định nghĩa yaml
+    net = hydra.utils.instantiate(cfg.net)
+
+    # Ghi đè tham số mask nếu cần
+    net.mask = mask
+    return net
+
+def predict_from_pth(pth_path, data_dir, n_train):
     """Nạp mô hình cũ (.pth) và chạy inference."""
-    import torch
-
-    old_code_dir = (r"C:\Users\MSI LAPTOP\Downloads\Documents\CODE\ML\PycharmPractice"
-                    r"\NCKH\Điện tim\ecg-MI-classification-code\ecg-segmentation"
-                    r"\ecg-segmentation-main")
-    if old_code_dir not in sys.path:
-        sys.path.insert(0, old_code_dir)
-
-    import model as old_model
-
-    loader, seg_true, cls_true = _load_test_data(data_dir)
+    loader, seg_true, cls_true = _load_test_data(data_dir, n_train)
 
     print(f"Đang khởi tạo mô hình cũ từ {pth_path}...")
     checkpoint = torch.load(pth_path, map_location='cpu')
-    n_channels = checkpoint.get('n_channels', 32)
 
-    net = old_model.ECGUNet3pCGM(n_channels=n_channels)
+    net = build_ecg_unet3p_cgm()
     state_dict = checkpoint.get('model_state_dict', checkpoint)
     net.load_state_dict(state_dict)
 
@@ -567,11 +427,9 @@ def predict_from_pth(pth_path, data_dir):
     return seg_true, seg_pred, cls_true, cls_pred
 
 
-def predict_from_ckpt(ckpt_path, data_dir):
+def predict_from_ckpt(ckpt_path, data_dir, n_train):
     """Nạp mô hình Lightning (.ckpt) và chạy inference."""
-    import torch
-
-    loader, seg_true, cls_true = _load_test_data(data_dir)
+    loader, seg_true, cls_true = _load_test_data(data_dir, n_train)
 
     print(f"Đang đọc checkpoint từ {ckpt_path}...")
     checkpoint = torch.load(ckpt_path, map_location='cpu')
@@ -596,7 +454,7 @@ def main():
         description='Đánh giá phân đoạn ECG theo chuẩn AAMI.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument('--predictions', type=str, default='final_model.pth',
+    parser.add_argument('--predictions', type=str, default='final_model_180.pth',
                         help='Đường dẫn file .npz, .pth hoặc .ckpt')
     parser.add_argument('--data_dir', type=str,
                         default=(r'C:\Users\MSI LAPTOP\Downloads\Documents\CODE\ML\PycharmPractice'
@@ -604,7 +462,7 @@ def main():
                                  r'\segmentation_data\lobachevsky-university-electrocardiography-'
                                  r'database-1.0.1\data'),
                         help='Đường dẫn LUDB data')
-    parser.add_argument('--n_train', type=int, default=20,
+    parser.add_argument('--n_train', type=int, default=180,
                         help='Số bản ghi dùng để train (để xác định test set)')
     parser.add_argument('--tolerance', type=int, default=75,
                         help='Ngưỡng AAMI tính bằng số mẫu (75 = 150ms ở 500Hz)')
@@ -618,10 +476,10 @@ def main():
     ext = os.path.splitext(args.predictions)[1].lower()
     if ext == '.ckpt':
         print(f"\nPhát hiện file .ckpt → suy luận trên test set...")
-        seg_true_all, seg_pred_all, cls_true_all, cls_pred_all = predict_from_ckpt(args.predictions, args.data_dir)
+        seg_true_all, seg_pred_all, cls_true_all, cls_pred_all = predict_from_ckpt(args.predictions, args.data_dir, n_train = args.n_train)
     elif ext == '.pth':
         print(f"\nPhát hiện file .pth → suy luận trên test set...")
-        seg_true_all, seg_pred_all, cls_true_all, cls_pred_all = predict_from_pth(args.predictions, args.data_dir)
+        seg_true_all, seg_pred_all, cls_true_all, cls_pred_all = predict_from_pth(args.predictions, args.data_dir, n_train = args.n_train)
     elif ext == '.npz':
         print(f"Đang nạp {args.predictions}...")
         data = np.load(args.predictions)
@@ -633,9 +491,29 @@ def main():
         print("Định dạng file không được hỗ trợ! Hãy dùng .npz, .pth hoặc .ckpt.")
         return
 
+    n_total = len(seg_true_all)
+    n_records = n_total // N_LEADS
+    eval_leads = EVAL_LEAD_INDICES
+    eval_lead_names = [LEAD_NAMES[i] for i in eval_leads]
+    print(f"Tổng tín hiệu: {n_total} ({n_records} bản ghi x {N_LEADS} chuyển đạo)")
+    print(f"→ Chỉ đánh giá trên Lead: {', '.join(eval_lead_names)}")
+
+    # ---- Lọc chỉ giữ Lead I và II ----
+    keep_indices = []
+    for rec in range(n_records):
+        for lead_idx in eval_leads:
+            keep_indices.append(rec * N_LEADS + lead_idx)
+    keep_indices = np.array(keep_indices)
+
+    seg_true_all = seg_true_all[keep_indices]
+    seg_pred_all = seg_pred_all[keep_indices]
+    if cls_true_all is not None:
+        cls_true_all = cls_true_all[keep_indices]
+    if cls_pred_all is not None:
+        cls_pred_all = cls_pred_all[keep_indices]
+
     n_signals = len(seg_true_all)
-    n_records = n_signals // N_LEADS
-    print(f"Số tín hiệu: {n_signals} ({n_records} bản ghi x {N_LEADS} chuyển đạo)")
+    print(f"Số tín hiệu sau lọc: {n_signals} ({n_records} bản ghi x {len(eval_leads)} chuyển đạo)")
 
     # ---- Dice Score & Accuracy ----
     if cls_true_all is not None and cls_pred_all is not None:
@@ -644,7 +522,7 @@ def main():
     # ---- Xác định nhãn rhythm ----
     if args.data_dir is not None:
         record_rhythms = get_test_rhythm_labels(args.data_dir, n_records)
-        lead_rhythms = [r for r in record_rhythms for _ in range(N_LEADS)]
+        lead_rhythms = [r for r in record_rhythms for _ in range(len(eval_leads))]
     else:
         print("\n⚠ Không có --data_dir: dùng cls_true để phân AFIB/AFL.")
         if cls_true_all is not None:
